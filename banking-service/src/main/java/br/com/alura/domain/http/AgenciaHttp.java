@@ -15,6 +15,10 @@ public class AgenciaHttp {
         return razaoSocial;
     }
 
+    public String getCnpj() {
+        return cnpj;
+    }
+
     public SituacaoCadastral getSituacaoCadastral() {
         return situacaoCadastral;
     }
