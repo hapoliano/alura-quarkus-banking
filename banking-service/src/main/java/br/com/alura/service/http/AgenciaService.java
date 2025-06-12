@@ -7,8 +7,10 @@ import br.com.alura.exceptions.AgenciaNaoAtivaOuNaoEncontradaException;
 import br.com.alura.repository.AgenciaRepository;
 import br.com.alura.service.SituacaoCadastralHttpService;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
+import io.quarkus.hibernate.reactive.panache.common.WithSession;
+import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
@@ -26,33 +28,41 @@ public class AgenciaService {
     @RestClient
     SituacaoCadastralHttpService situacaoCadastralHttpService;
 
-    public void cadastrar(Agencia agencia) {
-        Timer timer = this.meterRegistry.timer("cadastrar_agencia_timer");
-        timer.record(() -> {
-            AgenciaHttp agenciaHttp = situacaoCadastralHttpService.buscarPorCnpj(agencia.getCnpj());
-            if (agenciaHttp != null && agenciaHttp.getSituacaoCadastral().equals(SituacaoCadastral.ATIVO)) {
-                Log.info("A agência com o CNPJ " + agencia.getCnpj() + " foi cadastrada");
-                meterRegistry.counter("agencia_adcionada_counter").increment();
-                agenciaRepository.persist(agencia);
-            } else {
-                Log.info("A agência com o CNPJ " + agencia.getCnpj() + " não foi cadastrada");
-                meterRegistry.counter("agencia_nao_adcionada _counter").increment();
-                throw new AgenciaNaoAtivaOuNaoEncontradaException();
-            }
-        });
+    @WithTransaction
+    public Uni<Void> cadastrar(Agencia agencia) {
+        Uni<AgenciaHttp> agenciaHttp = situacaoCadastralHttpService.buscarPorCnpj(agencia.getCnpj());
+        return agenciaHttp
+                .onItem().ifNull().failWith(new AgenciaNaoAtivaOuNaoEncontradaException())
+                .onItem().transformToUni(item -> persistirSeAtiva(agencia, item));
+
     }
 
-    public Agencia buscarPorId(Long id) {
+    private Uni<Void> persistirSeAtiva(Agencia agencia, AgenciaHttp agenciaHttp) {
+        if (agenciaHttp.getSituacaoCadastral().equals(SituacaoCadastral.ATIVO)) {
+            Log.info("A agência com o CNPJ " + agencia.getCnpj() + " foi cadastrada");
+            meterRegistry.counter("agencia_adcionada_counter").increment();
+            return agenciaRepository.persist(agencia).replaceWithVoid();
+        } else {
+            Log.info("A agência com o CNPJ " + agencia.getCnpj() + " não foi cadastrada");
+            meterRegistry.counter("agencia_nao_adcionada _counter").increment();
+            return Uni.createFrom().failure(new AgenciaNaoAtivaOuNaoEncontradaException());
+        }
+    }
+
+    @WithSession
+    public Uni<Agencia> buscarPorId(Long id) {
         return agenciaRepository.findById(id);
     }
 
-    public void deletar(Long id) {
-        Log.info("A agência com o id " + id  + " foi deletada");
-        agenciaRepository.deleteById(id);
+    @WithTransaction
+    public Uni<Void> deletar(Long id) {
+        Log.info("A agência com o id " + id + " foi deletada");
+        return agenciaRepository.deleteById(id).replaceWithVoid();
     }
 
-    public void alterar(Agencia agencia) {
+    @WithTransaction
+    public Uni<Void> alterar(Agencia agencia) {
         Log.info("A agência com o CNPJ " + agencia.getCnpj() + " foi alterada");
-        agenciaRepository.update("nome = ?1, razaoSocial = ?2, cnpj = ?3 where id = ?4", agencia.getNome(), agencia.getRazaoSocial(), agencia.getCnpj(), agencia.getId());
+        return agenciaRepository.update("nome = ?1, razaoSocial = ?2, cnpj = ?3 where id = ?4", agencia.getNome(), agencia.getRazaoSocial(), agencia.getCnpj(), agencia.getId()).replaceWithVoid();
     }
 }

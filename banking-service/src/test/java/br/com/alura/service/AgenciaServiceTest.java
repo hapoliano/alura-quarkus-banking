@@ -9,6 +9,8 @@ import br.com.alura.service.http.AgenciaService;
 import br.com.alura.utils.AgenciaFixture;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
+import io.smallrye.mutiny.Uni;
+import io.vertx.core.Vertx;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.junit.jupiter.api.Assertions;
@@ -36,11 +38,12 @@ public class AgenciaServiceTest {
     @Test
     public void deveNaoCadastrarQuandoClientRetornarNull() {
         Agencia agencia = AgenciaFixture.criarAgencia();
-        Mockito.when(situacaoCadastralHttpService.buscarPorCnpj("123")).thenReturn(null);
+        Mockito.when(situacaoCadastralHttpService.buscarPorCnpj("123")).thenReturn(Uni.createFrom().nullItem());
 
-        Assertions.assertThrows(AgenciaNaoAtivaOuNaoEncontradaException.class, () -> agenciaService.cadastrar(agencia));
-
-        Mockito.verify(agenciaRepository, Mockito.never()).persist(agencia);
+        Vertx.vertx().runOnContext(v -> {
+            Assertions.assertThrows(AgenciaNaoAtivaOuNaoEncontradaException.class, () -> agenciaService.cadastrar(agencia).await().indefinitely());
+            Mockito.verify(agenciaRepository, Mockito.never()).persist(agencia);
+        });
     }
 
     @Test
@@ -48,9 +51,10 @@ public class AgenciaServiceTest {
         Agencia agencia = AgenciaFixture.criarAgencia();
         Mockito.when(situacaoCadastralHttpService.buscarPorCnpj("123")).thenReturn(AgenciaFixture.criarAgenciaHttp("INATIVO"));
 
-        Assertions.assertThrows(AgenciaNaoAtivaOuNaoEncontradaException.class, () -> agenciaService.cadastrar(agencia));
-
-        Mockito.verify(agenciaRepository, Mockito.never()).persist(agencia);
+        Vertx.vertx().runOnContext(r -> {
+            Assertions.assertThrows(AgenciaNaoAtivaOuNaoEncontradaException.class, () -> agenciaService.cadastrar(agencia).await().indefinitely());
+            Mockito.verify(agenciaRepository, Mockito.never()).persist(agencia);
+        });
     }
 
     @Test
@@ -58,8 +62,9 @@ public class AgenciaServiceTest {
         Agencia agencia = AgenciaFixture.criarAgencia();
         Mockito.when(situacaoCadastralHttpService.buscarPorCnpj("123")).thenReturn(AgenciaFixture.criarAgenciaHttp("ATIVO"));
 
-        agenciaService.cadastrar(agencia);
-
-        Mockito.verify(agenciaRepository).persist(agencia);
+        Vertx.vertx().runOnContext(r -> {
+            agenciaService.cadastrar(agencia).await().indefinitely();
+            Mockito.verify(agenciaRepository).persist(agencia);
+        });
     }
 }
