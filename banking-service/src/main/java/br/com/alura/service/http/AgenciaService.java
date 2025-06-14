@@ -12,6 +12,8 @@ import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.quarkus.logging.Log;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
+import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 @ApplicationScoped
@@ -29,6 +31,13 @@ public class AgenciaService {
     SituacaoCadastralHttpService situacaoCadastralHttpService;
 
     @WithTransaction
+    @CircuitBreaker(
+            requestVolumeThreshold = 5,
+            failureRatio = 0.5,
+            delay = 2000,
+            successThreshold = 2
+    )
+    @Fallback(fallbackMethod = "chamarFallback")
     public Uni<Void> cadastrar(Agencia agencia) {
         Uni<AgenciaHttp> agenciaHttp = situacaoCadastralHttpService.buscarPorCnpj(agencia.getCnpj());
         return agenciaHttp
@@ -47,6 +56,12 @@ public class AgenciaService {
             meterRegistry.counter("agencia_nao_adcionada _counter").increment();
             return Uni.createFrom().failure(new AgenciaNaoAtivaOuNaoEncontradaException());
         }
+    }
+
+
+    public Uni<Void> chamarFallback(Agencia agencia) {
+        Log.info("A agência com CNPJ " + agencia.getCnpj() + " não foi adcionado pois houve um erro");
+        return Uni.createFrom().nullItem();
     }
 
     @WithSession
